@@ -195,6 +195,9 @@ router.get('/', getCampaignsValidation, validateRequest, async (req, res) => {
   const filters = [];
   const params = [];
 
+  // Exclude deleted campaigns from public listing
+  filters.push(`c.deleted_at IS NULL`);
+
   if (status) {
     params.push(status);
     filters.push(`status = $${params.length}`);
@@ -211,7 +214,7 @@ router.get('/', getCampaignsValidation, validateRequest, async (req, res) => {
   }
 
   const whereClause = filters.length ? `WHERE ${filters.join(' AND ')}` : '';
-  const countQuery = `SELECT COUNT(*)::int AS total FROM campaigns ${whereClause}`;
+  const countQuery = `SELECT COUNT(*)::int AS total FROM campaigns c ${whereClause}`;
   const countResult = await db.query(countQuery, params);
   const total = countResult.rows[0]?.total || 0;
 
@@ -354,6 +357,12 @@ router.get('/:id', async (req, res) => {
   if (!rows.length) return res.status(404).json({ error: 'Campaign not found' });
   
   const campaign = rows[0];
+  
+  // Allow viewing suspended campaigns with a notice, but deleted campaigns are not accessible
+  if (campaign.deleted_at) {
+    return res.status(404).json({ error: 'Campaign not found' });
+  }
+  
   let userRole = null;
 
   const header = req.headers.authorization;
@@ -364,7 +373,7 @@ router.get('/:id', async (req, res) => {
         const jwt = require('jsonwebtoken');
         const payload = jwt.verify(token, process.env.JWT_SECRET);
         if (payload && payload.userId) {
-          if (payload.role === 'admin') {
+          if (payload.is_admin) {
             userRole = 'owner';
           } else if (campaign.creator_id === payload.userId) {
             userRole = 'owner';
@@ -384,7 +393,13 @@ router.get('/:id', async (req, res) => {
     }
   }
 
-  res.json({ ...campaign, user_role: userRole });
+  // Add notice if campaign is suspended
+  const response = { ...campaign, user_role: userRole };
+  if (campaign.status === 'suspended') {
+    response.suspended_notice = 'This campaign has been suspended and cannot receive new contributions';
+  }
+
+  res.json(response);
 });
 
 // Embeddable campaign widget data (public, with permissive CORS)
