@@ -4,6 +4,27 @@
 
 **Global funding infrastructure built on Stellar.**
 
+---
+
+## Quick start with Docker
+
+The fastest way to run the full stack locally (requires [Docker](https://docs.docker.com/get-docker/)):
+
+```bash
+cp backend/.env.example backend/.env
+docker compose up
+```
+
+| Service  | URL                        |
+|----------|----------------------------|
+| Frontend | http://localhost:5173       |
+| Backend  | http://localhost:3001       |
+| Postgres | localhost:5432             |
+
+The database schema is applied automatically on first start. Backend supports hot-reload via nodemon; frontend supports HMR via Vite.
+
+---
+
 CrowdPay is not a crowdfunding website — it is a payments protocol with a product layer on top. Contributors anywhere in the world can fund campaigns in any currency. Stellar handles the conversion, settlement, and custody automatically.
 
 ---
