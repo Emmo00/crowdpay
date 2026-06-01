@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { api } from '../services/api';
 import { getNetwork, signTransaction } from '@stellar/freighter-api';
 import { stellarExpertTxUrl } from '../config/stellar';
+import { useToast } from '../context/ToastContext';
 
 const ELIGIBLE = ['active', 'funded'];
 
@@ -18,6 +19,7 @@ function statusLabel(row, isExpired) {
 }
 
 export default function WithdrawalsSection({ campaign, milestones = [], user, token, onReleased }) {
+  const toast = useToast();
   const [forbidden, setForbidden] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -147,13 +149,14 @@ export default function WithdrawalsSection({ campaign, milestones = [], user, to
     }
   }
 
-  async function runAction(id, fn) {
+  async function runAction(id, fn, successMessage) {
     setBusyId(id);
     setError('');
     try {
       await fn();
       await refresh();
       onReleased?.();
+      if (successMessage) toast?.(successMessage, 'success');
     } catch (err) {
       if (err.status === 410) {
         // XDR has expired — mark this row so the UI can prompt the creator to re-request
@@ -432,7 +435,8 @@ export default function WithdrawalsSection({ campaign, milestones = [], user, to
                       disabled={busyId === row.id}
                       onClick={() =>
                         runAction(row.id, () =>
-                          api.cancelWithdrawal(row.id, { reason: 'Cancelled by creator' }, token)
+                          api.cancelWithdrawal(row.id, { reason: 'Cancelled by creator' }, token),
+                          'Withdrawal cancelled'
                         )
                       }
                       style={{ fontSize: '0.8rem' }}
@@ -454,7 +458,7 @@ export default function WithdrawalsSection({ campaign, milestones = [], user, to
                         type="button"
                         className="btn-primary"
                         disabled={busyId === row.id}
-                        onClick={() => runAction(row.id, () => api.approveWithdrawalCreator(row.id, token))}
+                        onClick={() => runAction(row.id, () => api.approveWithdrawalCreator(row.id, token), 'Withdrawal signed')}
                         style={{ fontSize: '0.8rem' }}
                       >
                         Sign as creator
@@ -464,6 +468,35 @@ export default function WithdrawalsSection({ campaign, milestones = [], user, to
                 )}
                 {row.status === 'pending' && row.creator_signed && !row.platform_signed && cap.can_approve_platform && !expiredIds.has(row.id) && (
                   <>
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      disabled={busyId === row.id}
+                      onClick={async () => {
+                        const reason = window.prompt(
+                          'Rejection reason (visible in audit log):',
+                          'Rejected by platform'
+                        );
+                        if (reason === null) return;
+                        await runAction(
+                          row.id,
+                          () => api.rejectWithdrawal(row.id, { reason: reason || 'Rejected' }, token),
+                          'Withdrawal rejected'
+                        );
+                      }}
+                      style={{ fontSize: '0.8rem' }}
+                    >
+                      Reject
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-primary"
+                      disabled={busyId === row.id}
+                      onClick={() => runAction(row.id, () => api.approveWithdrawalPlatform(row.id, token), 'Withdrawal approved')}
+                      style={{ fontSize: '0.8rem' }}
+                    >
+                      Admin approve & submit
+                    </button>
                     {rejectingId === row.id ? (
                       <div style={{ marginTop: '0.5rem', display: 'flex', flexDirection: 'column', gap: '0.4rem', width: '100%' }}>
                         <textarea
