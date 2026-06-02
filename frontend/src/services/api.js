@@ -210,6 +210,7 @@ export const api = {
   startKyc: () => request("POST", "/users/me/kyc/start"),
 
   getMyCampaigns: () => request("GET", "/campaigns/mine"),
+  getFeaturedCampaigns: () => request("GET", "/campaigns/featured"),
   getCampaigns: (options = {}) =>
     request("GET", "/campaigns", null, { query: options }),
   getCampaign: (id) => request("GET", `/campaigns/${id}`),
@@ -331,6 +332,8 @@ export const api = {
   updateCampaignStatus: (id, status) => request('PATCH', `/admin/campaigns/${id}/status`, { status }),
   adminSuspendCampaign: (id, body) => request('PATCH', `/admin/campaigns/${id}/suspend`, body),
   adminRestoreCampaign: (id) => request('PATCH', `/admin/campaigns/${id}/restore`, {}),
+  adminFeatureCampaign: (id, body) => request('PATCH', `/admin/campaigns/${id}/feature`, body),
+  adminUnfeatureCampaign: (id) => request('PATCH', `/admin/campaigns/${id}/unfeature`, {}),
   adminDeleteCampaign: (id, body) => request('DELETE', `/admin/campaigns/${id}`, body),
   adminBanUser: (id, body) => request('PATCH', `/admin/users/${id}/ban`, body),
   adminUnbanUser: (id) => request('PATCH', `/admin/users/${id}/unban`, {}),
