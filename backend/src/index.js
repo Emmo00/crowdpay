@@ -26,6 +26,7 @@ const db = require('./config/database');
 const swaggerUi = require('swagger-ui-express');
 const swaggerJsdoc = require('swagger-jsdoc');
 const rateLimit = require('express-rate-limit');
+const db = require('./config/database');
 
 const app = express();
 
@@ -225,3 +226,5 @@ bootstrap().catch((err) => {
   sendAlert('Backend bootstrap failed', { error: err.message });
   process.exit(1);
 });
+
+module.exports = app;
