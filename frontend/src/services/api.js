@@ -282,4 +282,8 @@ export const api = {
   createWebhook: (body) => request('POST', '/webhooks', body),
   listWebhookDeliveries: (options = {}) => request('GET', '/webhooks/deliveries', null, { query: options }),
   deleteWebhook: (id) => request('DELETE', `/webhooks/${id}`),
+
+  getNotifications: () => request('GET', '/notifications'),
+  markNotificationRead: (id) => request('PATCH', `/notifications/${id}/read`, {}),
+  markAllNotificationsRead: () => request('PATCH', '/notifications/read-all', {}),
 };
