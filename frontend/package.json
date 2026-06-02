@@ -13,6 +13,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@sentry/react": "^10.55.0",
     "@stellar/freighter-api": "^4.1.0",
     "easymde": "^2.18.0",
     "i18next": "^25.3.2",

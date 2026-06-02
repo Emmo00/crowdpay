@@ -16,7 +16,7 @@ const {
   Asset,
   BASE_FEE,
   Memo,
-} = require("@stellar/stellar-sdk");
+} = require('@stellar/stellar-sdk');
 const {
   server,
   networkPassphrase,
@@ -35,15 +35,15 @@ const {
 const PLATFORM_KEYPAIR = Keypair.fromSecret(process.env.PLATFORM_SECRET_KEY);
 
 function calcFee(amount) {
-  const bps = parseInt(process.env.PLATFORM_FEE_BPS || "0", 10);
-  const fee = parseFloat(((parseFloat(amount) * bps) / 10000).toFixed(7));
+  const bps = parseInt(process.env.PLATFORM_FEE_BPS || '0', 10);
+  const fee = parseFloat((parseFloat(amount) * bps / 10000).toFixed(7));
   const net = parseFloat((parseFloat(amount) - fee).toFixed(7));
   return { feeAmount: fee, campaignAmount: net, bps };
 }
 
 function toStellarAsset(assetCode) {
-  if (assetCode === "XLM") return Asset.native();
-  if (assetCode === "USDC") return USDC;
+  if (assetCode === 'XLM') return Asset.native();
+  if (assetCode === 'USDC') return USDC;
   if (configuredAssets[assetCode]?.issuer) {
     return new Asset(assetCode, configuredAssets[assetCode].issuer);
   }
@@ -56,17 +56,17 @@ function getSupportedAssetCodes() {
 
 /** Issued assets CrowdPay may move on-chain (requires trustlines on custodial accounts). */
 function listCreditAssetCodes() {
-  return getSupportedAssetCodes().filter((code) => code !== "XLM");
+  return getSupportedAssetCodes().filter((code) => code !== 'XLM');
 }
 
 function accountHasCreditTrustline(account, assetCode) {
-  if (assetCode === "XLM") return true;
+  if (assetCode === 'XLM') return true;
   const asset = toStellarAsset(assetCode);
   return account.balances.some(
     (b) =>
-      b.asset_type !== "native" &&
+      b.asset_type !== 'native' &&
       b.asset_code === asset.code &&
-      b.asset_issuer === asset.issuer,
+      b.asset_issuer === asset.issuer
   );
 }
 
@@ -97,11 +97,8 @@ async function accountExistsOnLedger(publicKey) {
 async function fundCustodialAccountFromPlatformIfNeeded(publicKey) {
   if (await accountExistsOnLedger(publicKey)) return false;
   const trustlineCount = listCreditAssetCodes().length;
-  const startingBalance =
-    suggestedFundingXlmForCustodialAccount(trustlineCount);
-  const platformAccount = await server.loadAccount(
-    PLATFORM_KEYPAIR.publicKey(),
-  );
+  const startingBalance = suggestedFundingXlmForCustodialAccount(trustlineCount);
+  const platformAccount = await server.loadAccount(PLATFORM_KEYPAIR.publicKey());
   const tx = new TransactionBuilder(platformAccount, {
     fee: BASE_FEE,
     networkPassphrase,
@@ -110,7 +107,7 @@ async function fundCustodialAccountFromPlatformIfNeeded(publicKey) {
       Operation.createAccount({
         destination: publicKey,
         startingBalance,
-      }),
+      })
     )
     .setTimeout(TX_TIMEOUT_CONTRIBUTION_S)
     .build();
@@ -135,9 +132,7 @@ async function submitMissingTrustlinesForCustodialAccount(signerSecret) {
   let missing = 0;
   for (const code of listCreditAssetCodes()) {
     if (!accountHasCreditTrustline(account, code)) {
-      builder.addOperation(
-        Operation.changeTrust({ asset: toStellarAsset(code) }),
-      );
+      builder.addOperation(Operation.changeTrust({ asset: toStellarAsset(code) }));
       missing += 1;
     }
   }
@@ -161,7 +156,7 @@ async function ensureCustodialAccountFundedAndTrusted({ publicKey, secret }) {
 
 function normalizeAsset(record) {
   if (!record) return null;
-  if (record.asset_type === "native") return "XLM";
+  if (record.asset_type === 'native') return 'XLM';
   return record.asset_code;
 }
 
@@ -173,14 +168,10 @@ function normalizeAsset(record) {
  */
 async function createCampaignWallet(creatorPublicKey) {
   const campaignKeypair = Keypair.random();
-  const platformAccount = await server.loadAccount(
-    PLATFORM_KEYPAIR.publicKey(),
-  );
+  const platformAccount = await server.loadAccount(PLATFORM_KEYPAIR.publicKey());
 
   const creditCodes = listCreditAssetCodes();
-  const campaignStartingBalance = suggestedFundingXlmForCustodialAccount(
-    creditCodes.length + 1,
-  );
+  const campaignStartingBalance = suggestedFundingXlmForCustodialAccount(creditCodes.length + 1);
 
   const tx = new TransactionBuilder(platformAccount, {
     fee: BASE_FEE,
@@ -190,7 +181,7 @@ async function createCampaignWallet(creatorPublicKey) {
       Operation.createAccount({
         destination: campaignKeypair.publicKey(),
         startingBalance: campaignStartingBalance,
-      }),
+      })
     )
     .setTimeout(TX_TIMEOUT_CONTRIBUTION_S)
     .build();
@@ -206,30 +197,28 @@ async function createCampaignWallet(creatorPublicKey) {
     networkPassphrase,
   });
   for (const code of creditCodes) {
-    setupBuilder.addOperation(
-      Operation.changeTrust({ asset: toStellarAsset(code) }),
-    );
+    setupBuilder.addOperation(Operation.changeTrust({ asset: toStellarAsset(code) }));
   }
   const setupTx = setupBuilder
     .addOperation(
       Operation.setOptions({
         signer: { ed25519PublicKey: creatorPublicKey, weight: 1 },
-      }),
+      })
     )
     // Add platform as signer (weight 1)
     .addOperation(
       Operation.setOptions({
         signer: { ed25519PublicKey: PLATFORM_KEYPAIR.publicKey(), weight: 1 },
-      }),
+      })
     )
     // Set thresholds: medium ops (payments) require weight 2 (both signers)
     .addOperation(
       Operation.setOptions({
-        masterWeight: 0, // disable the campaign keypair itself
+        masterWeight: 0,     // disable the campaign keypair itself
         lowThreshold: 1,
         medThreshold: 2,
         highThreshold: 2,
-      }),
+      })
     )
     .setTimeout(TX_TIMEOUT_CONTRIBUTION_S)
     .build();
@@ -257,16 +246,14 @@ async function buildUnsignedContributionPayment({
   const stellarAsset = toStellarAsset(asset);
   const { feeAmount, campaignAmount } = calcFee(amount);
 
-  const builder = new TransactionBuilder(senderAccount, {
-    fee: BASE_FEE,
-    networkPassphrase,
-  }).addOperation(
-    Operation.payment({
-      destination: destinationPublicKey,
-      asset: stellarAsset,
-      amount: String(campaignAmount),
-    }),
-  );
+  const builder = new TransactionBuilder(senderAccount, { fee: BASE_FEE, networkPassphrase })
+    .addOperation(
+      Operation.payment({
+        destination: destinationPublicKey,
+        asset: stellarAsset,
+        amount: String(campaignAmount),
+      })
+    );
 
   if (feeAmount > 0) {
     builder.addOperation(
@@ -274,7 +261,7 @@ async function buildUnsignedContributionPayment({
         destination: PLATFORM_KEYPAIR.publicKey(),
         asset: stellarAsset,
         amount: String(feeAmount),
-      }),
+      })
     );
   }
 
@@ -332,24 +319,24 @@ async function buildUnsignedContributionPathPayment({
   const { feeAmount, campaignAmount, bps } = calcFee(destAmount);
 
   const sendMaxFloat = parseFloat(sendMax);
-  const campaignSendMax =
-    feeAmount > 0 ? (sendMaxFloat * (1 - bps / 10000)).toFixed(7) : sendMax;
-  const feeSendMax =
-    feeAmount > 0 ? (sendMaxFloat * (bps / 10000)).toFixed(7) : "0";
+  const campaignSendMax = feeAmount > 0
+    ? ((sendMaxFloat * (1 - bps / 10000)).toFixed(7))
+    : sendMax;
+  const feeSendMax = feeAmount > 0
+    ? ((sendMaxFloat * (bps / 10000)).toFixed(7))
+    : '0';
 
-  const builder = new TransactionBuilder(senderAccount, {
-    fee: BASE_FEE,
-    networkPassphrase,
-  }).addOperation(
-    Operation.pathPaymentStrictReceive({
-      sendAsset: sourceStellarAsset,
-      sendMax: String(campaignSendMax),
-      destination: destinationPublicKey,
-      destAsset: destStellarAsset,
-      destAmount: String(campaignAmount),
-      path: [],
-    }),
-  );
+  const builder = new TransactionBuilder(senderAccount, { fee: BASE_FEE, networkPassphrase })
+    .addOperation(
+      Operation.pathPaymentStrictReceive({
+        sendAsset: sourceStellarAsset,
+        sendMax: String(campaignSendMax),
+        destination: destinationPublicKey,
+        destAsset: destStellarAsset,
+        destAmount: String(campaignAmount),
+        path: [],
+      })
+    );
 
   if (feeAmount > 0) {
     builder.addOperation(
@@ -360,7 +347,7 @@ async function buildUnsignedContributionPathPayment({
         destAsset: destStellarAsset,
         destAmount: String(feeAmount),
         path: [],
-      }),
+      })
     );
   }
 
@@ -400,7 +387,7 @@ async function prepareSignedContributionPathPayment({
  * The contributor sends `sendAsset`; the campaign receives exactly `destAmount` of `destAssetCode`.
  */
 async function submitPathPayment(params) {
-  const destAssetCode = params.destAssetCode || "USDC";
+  const destAssetCode = params.destAssetCode || 'USDC';
   const { signedXdr } = await prepareSignedContributionPathPayment({
     ...params,
     destAssetCode,
@@ -417,11 +404,7 @@ async function getPathPaymentQuote({ sendAsset, destAsset, destAmount }) {
   const destinationStellarAsset = toStellarAsset(destAsset);
 
   const response = await server
-    .strictReceivePaths(
-      sourceStellarAsset,
-      destinationStellarAsset,
-      String(destAmount),
-    )
+    .strictReceivePaths(sourceStellarAsset, destinationStellarAsset, String(destAmount))
     .call();
 
   return (response.records || []).map((record) => ({
@@ -461,7 +444,7 @@ async function buildWithdrawalTransaction({
         destination: destinationPublicKey,
         asset: stellarAsset,
         amount: String(amount),
-      }),
+      })
     )
     .setTimeout(TX_TIMEOUT_WITHDRAWAL_S) // platform approver may not be available immediately (see issue #128)
     .build();
@@ -529,60 +512,16 @@ function isXdrExpired(xdr) {
   try {
     const tx = TransactionBuilder.fromXDR(xdr, networkPassphrase);
     const { timeBounds } = tx;
-    return !!(
-      timeBounds && Math.floor(Date.now() / 1000) > Number(timeBounds.maxTime)
-    );
+    return !!(timeBounds && Math.floor(Date.now() / 1000) > Number(timeBounds.maxTime));
   } catch {
     return false;
   }
 }
 
-function isInsufficientFeeError(err) {
-  const resultCodes = err?.response?.data?.extras?.result_codes;
-  return resultCodes?.transaction === "tx_insufficient_fee";
-}
-
-function isBadSequenceError(err) {
-  const resultCodes = err?.response?.data?.extras?.result_codes;
-  return resultCodes?.transaction === "tx_bad_seq";
-}
-
-async function submitWithFeeBumpFallback(innerXdr) {
-  try {
-    return await submitPreparedTransaction(innerXdr);
-  } catch (err) {
-    if (!isInsufficientFeeError(err)) throw err;
-
-    console.warn("[stellar] Fee too low, retrying with fee-bump...");
-    const innerTx = TransactionBuilder.fromXDR(innerXdr, networkPassphrase);
-    const platformAccount = await server.loadAccount(
-      PLATFORM_KEYPAIR.publicKey(),
-    );
-    const feeBump = TransactionBuilder.buildFeeBumpTransaction(
-      PLATFORM_KEYPAIR,
-      String(parseInt(BASE_FEE) * 10), // 10x the base fee
-      innerTx,
-      networkPassphrase,
-    );
-    feeBump.sign(PLATFORM_KEYPAIR);
-    const result = await server.submitTransaction(feeBump);
-    return result.hash;
-  }
-}
-
 async function submitPreparedTransaction(xdr) {
   const tx = TransactionBuilder.fromXDR(xdr, networkPassphrase);
-  try {
-    const result = await server.submitTransaction(tx);
-    return result.hash;
-  } catch (err) {
-    Sentry.withScope((scope) => {
-      scope.setTag('stellar.network', process.env.STELLAR_NETWORK);
-      scope.setExtra('tx_hash', tx.hash().toString('hex'));
-      Sentry.captureException(err);
-    });
-    throw err;
-  }
+  const result = await server.submitTransaction(tx);
+  return result.hash;
 }
 
 async function submitSignedWithdrawal({ xdr }) {
@@ -596,7 +535,7 @@ async function getCampaignBalance(publicKey) {
   const account = await server.loadAccount(publicKey);
   const balances = {};
   for (const b of account.balances) {
-    const key = b.asset_type === "native" ? "XLM" : b.asset_code;
+    const key = b.asset_type === 'native' ? 'XLM' : b.asset_code;
     balances[key] = b.balance;
   }
   return balances;
@@ -620,14 +559,13 @@ function recoverWalletFromSecret(secret) {
  * Get transaction history for a campaign wallet.
  */
 async function getWalletTransactionHistory(publicKey, limit = 50) {
-  const txs = await server
-    .transactions()
+  const txs = await server.transactions()
     .forAccount(publicKey)
-    .order("desc")
+    .order('desc')
     .limit(limit)
     .call();
-
-  return txs.records.map((tx) => ({
+  
+  return txs.records.map(tx => ({
     hash: tx.hash,
     created_at: tx.created_at,
     source_account: tx.source_account,
@@ -641,14 +579,13 @@ async function getWalletTransactionHistory(publicKey, limit = 50) {
  * Get payment operations for a campaign wallet (audit trail).
  */
 async function getWalletPayments(publicKey, limit = 100) {
-  const payments = await server
-    .payments()
+  const payments = await server.payments()
     .forAccount(publicKey)
-    .order("desc")
+    .order('desc')
     .limit(limit)
     .call();
-
-  return payments.records.map((p) => ({
+  
+  return payments.records.map(p => ({
     id: p.id,
     type: p.type,
     created_at: p.created_at,
@@ -656,14 +593,14 @@ async function getWalletPayments(publicKey, limit = 100) {
     from: p.from,
     to: p.to,
     amount: p.amount,
-    asset_type: p.asset_type === "native" ? "XLM" : p.asset_code,
+    asset_type: p.asset_type === 'native' ? 'XLM' : p.asset_code,
   }));
 }
 
 async function friendbotFund(publicKey) {
-  if (!isTestnet) throw new Error("Friendbot only available on testnet");
+  if (!isTestnet) throw new Error('Friendbot only available on testnet');
   const response = await fetch(
-    `https://friendbot.stellar.org?addr=${encodeURIComponent(publicKey)}`,
+    `https://friendbot.stellar.org?addr=${encodeURIComponent(publicKey)}`
   );
   return response.json();
 }
@@ -683,15 +620,12 @@ module.exports = {
   submitPayment,
   submitPathPayment,
   submitPreparedTransaction,
-  submitWithFeeBumpFallback,
   getPathPaymentQuote,
   buildWithdrawalTransaction,
   getAccountMultisigConfig,
   signTransactionXdr,
   signatureCountFromXdr,
   isXdrExpired,
-  isInsufficientFeeError,
-  isBadSequenceError,
   submitSignedWithdrawal,
   recoverWalletFromSecret,
   getWalletTransactionHistory,
@@ -699,6 +633,5 @@ module.exports = {
 
   getCampaignBalance,
   friendbotFund,
-  buildBatchRefundTransaction,
   PLATFORM_PUBLIC_KEY: PLATFORM_KEYPAIR.publicKey(),
 };
