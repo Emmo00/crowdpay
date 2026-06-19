@@ -233,7 +233,14 @@ export const api = {
   getCampaignMembers: (campaignId) =>
     request("GET", `/campaigns/${campaignId}/members`),
   inviteCampaignMember: (campaignId, body) =>
-    request("POST", `/campaigns/${campaignId}/members`, body),
+    request("POST", `/campaigns/${campaignId}/members/invite`, body),
+  resendCampaignInvite: (campaignId, memberId) =>
+    request("POST", `/campaigns/${campaignId}/members/${memberId}/resend`),
+  cancelCampaignInvite: (campaignId, memberId) =>
+    request("DELETE", `/campaigns/${campaignId}/members/invites/${memberId}`),
+  getInvitePreview: (token) => request("GET", `/invites/${token}`),
+  acceptInviteByToken: (token) =>
+    request("POST", `/invites/${token}/accept`, {}),
   updateCampaignMemberRole: (campaignId, userId, body) =>
     request("PATCH", `/campaigns/${campaignId}/members/${userId}`, body),
   removeCampaignMember: (campaignId, userId) =>
