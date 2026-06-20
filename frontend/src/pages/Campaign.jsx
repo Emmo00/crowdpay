@@ -153,7 +153,6 @@ export default function Campaign() {
   const [updatesError, setUpdatesError] = useState("");
   const [isLive, setIsLive] = useState(false);
   const [members, setMembers] = useState([]);
-  const [isOwner, setIsOwner] = useState(false);
   const [inviteForm, setInviteForm] = useState({ email: "", role: "viewer" });
   const [inviteBusy, setInviteBusy] = useState(false);
   const [inviteError, setInviteError] = useState("");
@@ -216,14 +215,23 @@ export default function Campaign() {
       .getCampaign(id, campaignOpts)
       .then((data) => {
         setCampaign(data);
-        if (data.user_role === "owner") {
-          setIsOwner(true);
+        const role = data.user_role;
+        if (role === "owner" || role === "manager") {
+          setActiveTab("team");
           api
-            .getCampaignMembers(id, token)
+            .getCampaignMembers(id)
             .then(setMembers)
-            .catch(() => {});
+            .catch(() => setMembers([]));
         } else {
-          setIsOwner(false);
+          setMembers([]);
+        }
+        if (role === "owner" || role === "manager" || role === "viewer") {
+          api
+            .getCampaignAnalytics(id)
+            .then(setAnalytics)
+            .catch(() => setAnalytics(null));
+        } else {
+          setAnalytics(null);
         }
       })
       .catch((err) => setLoadError(err.message || "Could not load campaign."));
@@ -245,10 +253,6 @@ export default function Campaign() {
       .getCampaignUpdates(id, { limit: 20 })
       .then(setUpdates)
       .catch(() => setUpdates([]));
-    api
-      .getCampaignAnalytics(id)
-      .then(setAnalytics)
-      .catch(() => setAnalytics(null));
 
     // Check for pending withdrawals
     if (token) {
@@ -397,7 +401,7 @@ export default function Campaign() {
     setInviteError("");
     setInviteSuccess(false);
     try {
-      const newMember = await api.inviteCampaignMember(id, inviteForm, token);
+      const newMember = await api.inviteCampaignMember(id, inviteForm);
       setMembers((prev) => [...prev, newMember]);
       setInviteForm({ email: "", role: "viewer" });
       setInviteSuccess(true);
@@ -410,12 +414,7 @@ export default function Campaign() {
 
   async function handleRoleChange(userId, newRole) {
     try {
-      const updated = await api.updateCampaignMemberRole(
-        id,
-        userId,
-        { role: newRole },
-        token,
-      );
+      const updated = await api.updateCampaignMemberRole(id, userId, { role: newRole });
       setMembers((prev) =>
         prev.map((m) =>
           m.user_id === userId ? { ...m, role: updated.role } : m,
@@ -429,10 +428,31 @@ export default function Campaign() {
   async function handleRemoveMember(userId) {
     if (!confirm("Are you sure you want to remove this member?")) return;
     try {
-      await api.removeCampaignMember(id, userId, token);
+      await api.removeCampaignMember(id, userId);
       setMembers((prev) => prev.filter((m) => m.user_id !== userId));
     } catch (err) {
       alert(err.message || "Failed to remove member");
+    }
+  }
+
+  async function handleResendInvite(memberId) {
+    try {
+      const updated = await api.resendCampaignInvite(id, memberId);
+      setMembers((prev) =>
+        prev.map((m) => (m.id === memberId ? { ...m, ...updated } : m)),
+      );
+    } catch (err) {
+      alert(err.message || "Failed to resend invitation");
+    }
+  }
+
+  async function handleCancelInvite(memberId) {
+    if (!confirm("Cancel this pending invitation?")) return;
+    try {
+      await api.cancelCampaignInvite(id, memberId);
+      setMembers((prev) => prev.filter((m) => m.id !== memberId));
+    } catch (err) {
+      alert(err.message || "Failed to cancel invitation");
     }
   }
 
@@ -644,8 +664,22 @@ export default function Campaign() {
     (campaign.raised_amount / campaign.target_amount) * 100,
   ).toFixed(1);
   const currentUserId = user?.id || user?.userId;
-  const canPostUpdate =
-    currentUserId && String(campaign.creator_id) === String(currentUserId);
+  const userRole =
+    campaign.user_role ||
+    (currentUserId && String(campaign.creator_id) === String(currentUserId)
+      ? "owner"
+      : null);
+  const canManageTeam = userRole === "owner" || userRole === "manager";
+  const canChangeRoles = userRole === "owner";
+  const canPostUpdate = userRole === "owner" || userRole === "manager";
+  const canEditCampaign =
+    (userRole === "owner" || userRole === "editor") &&
+    ["active", "funded"].includes(campaign.status);
+  const canViewAnalytics =
+    userRole === "owner" || userRole === "manager" || userRole === "viewer";
+  const isOwner = userRole === "owner";
+  const acceptedMembers = members.filter((m) => m.accepted_at);
+  const pendingInvites = members.filter((m) => !m.accepted_at);
   const campaignUrl = `${window.location.origin}/campaigns/${id}`;
   const embedCode = `<iframe src="${window.location.origin}/widget/campaigns/${id}" width="320" height="120" frameborder="0" style="border-radius:10px"></iframe>`;
 
@@ -1102,8 +1136,8 @@ export default function Campaign() {
         </div>
       </div>
 
-      {/* Edit campaign button - visible only to creator */}
-      {user && campaign && user.userId === campaign.creator_id && ['active', 'funded'].includes(campaign.status) && (
+      {/* Edit campaign — owner or editor */}
+      {user && campaign && canEditCampaign && (
         <div
           data-no-print
           style={{
@@ -1128,7 +1162,7 @@ export default function Campaign() {
             >
               Edit Campaign
             </button>
-            {campaign.status === "active" && !hasPendingWithdrawal && (
+            {isOwner && campaign.status === "active" && !hasPendingWithdrawal && (
               <button
                 type="button"
                 className="btn-secondary"
@@ -1363,9 +1397,56 @@ export default function Campaign() {
         milestones={milestones}
         assetType={campaign.asset_type}
       />
-      {isOwner && (
+      {canManageTeam && (
         <div style={{ marginBottom: "2rem" }} data-no-print>
-          <h2 style={styles.sectionTitle}>Team Management</h2>
+          <div
+            style={{
+              display: "flex",
+              gap: "0.5rem",
+              marginBottom: "1rem",
+              borderBottom: "1px solid var(--color-border-lighter)",
+              paddingBottom: "0.5rem",
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setActiveTab("team")}
+              style={{
+                background: activeTab === "team" ? "var(--color-accent)" : "transparent",
+                color: activeTab === "team" ? "#fff" : "var(--color-text-primary)",
+                border: "1px solid var(--color-border-light)",
+                borderRadius: "6px",
+                padding: "0.4rem 0.9rem",
+                fontWeight: 600,
+                fontSize: "0.85rem",
+                cursor: "pointer",
+              }}
+            >
+              Team
+            </button>
+            {canViewAnalytics && (
+              <button
+                type="button"
+                onClick={() => setActiveTab("analytics")}
+                style={{
+                  background: activeTab === "analytics" ? "var(--color-accent)" : "transparent",
+                  color: activeTab === "analytics" ? "#fff" : "var(--color-text-primary)",
+                  border: "1px solid var(--color-border-light)",
+                  borderRadius: "6px",
+                  padding: "0.4rem 0.9rem",
+                  fontWeight: 600,
+                  fontSize: "0.85rem",
+                  cursor: "pointer",
+                }}
+              >
+                Analytics
+              </button>
+            )}
+          </div>
+
+          {(activeTab !== "analytics") && (
+          <>
+          <h2 style={styles.sectionTitle}>Team</h2>
           <div className="campaign-card" style={{ marginBottom: "1.5rem" }}>
             <strong style={{ marginBottom: "0.75rem", display: "block" }}>
               Invite Team Member
@@ -1401,7 +1482,7 @@ export default function Campaign() {
                   style={{ width: "100%" }}
                 />
               </div>
-              <div style={{ width: "120px" }}>
+              <div style={{ width: "140px" }}>
                 <label
                   style={{
                     fontSize: "0.85rem",
@@ -1420,8 +1501,9 @@ export default function Campaign() {
                   style={{ width: "100%", padding: "0.5rem" }}
                 >
                   <option value="viewer">Viewer</option>
+                  <option value="editor">Editor</option>
                   <option value="manager">Manager</option>
-                  <option value="owner">Owner</option>
+                  {canChangeRoles && <option value="owner">Owner</option>}
                 </select>
               </div>
               <button
@@ -1451,17 +1533,87 @@ export default function Campaign() {
             )}
           </div>
 
+          {pendingInvites.length > 0 && (
+            <div className="campaign-card" style={{ marginBottom: "1.5rem" }}>
+              <strong style={{ marginBottom: "0.75rem", display: "block" }}>
+                Pending Invitations
+              </strong>
+              <div style={{ display: "grid", gap: "0.75rem" }}>
+                {pendingInvites.map((member) => (
+                  <div
+                    key={member.id}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: "1rem",
+                      flexWrap: "wrap",
+                      borderBottom: "1px solid var(--color-border-lighter)",
+                      paddingBottom: "0.5rem",
+                    }}
+                  >
+                    <div>
+                      <span style={{ fontWeight: 600 }}>{member.email}</span>
+                      <span
+                        style={{
+                          marginLeft: "0.5rem",
+                          fontSize: "0.75rem",
+                          fontWeight: 700,
+                          textTransform: "uppercase",
+                          color: "var(--color-warning-text)",
+                          background: "var(--color-warning-bg)",
+                          padding: "0.15rem 0.45rem",
+                          borderRadius: "4px",
+                        }}
+                      >
+                        {member.role}
+                      </span>
+                      {member.invite_expires_at && (
+                        <div style={{ fontSize: "0.75rem", color: "var(--color-text-hint)", marginTop: "0.25rem" }}>
+                          Expires {new Date(member.invite_expires_at).toLocaleDateString()}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{ display: "flex", gap: "0.5rem" }}>
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={() => handleResendInvite(member.id)}
+                        style={{ padding: "0.25rem 0.5rem", fontSize: "0.85rem" }}
+                      >
+                        Resend
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-secondary"
+                        onClick={() => handleCancelInvite(member.id)}
+                        style={{
+                          padding: "0.25rem 0.5rem",
+                          fontSize: "0.85rem",
+                          color: "var(--color-status-error)",
+                          borderColor: "var(--color-status-error)",
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="campaign-card">
             <strong style={{ marginBottom: "0.75rem", display: "block" }}>
-              Current Team
+              Team Members
             </strong>
-            {members.length === 0 ? (
+            {acceptedMembers.length === 0 ? (
               <p style={{ color: "var(--color-text-muted)" }}>
-                No team members yet.
+                No accepted team members yet.
               </p>
             ) : (
               <div style={{ display: "grid", gap: "0.75rem" }}>
-                {members.map((member) => (
+                {acceptedMembers.map((member) => (
                   <div
                     key={member.id}
                     style={{
@@ -1486,17 +1638,20 @@ export default function Campaign() {
                           ({member.user_name})
                         </span>
                       )}
-                      <div
+                      <span
                         style={{
+                          marginLeft: "0.5rem",
                           fontSize: "0.75rem",
-                          color: member.accepted_at
-                            ? "var(--color-success-text)"
-                            : "var(--color-warning-text)",
-                          fontWeight: 600,
+                          fontWeight: 700,
+                          textTransform: "uppercase",
+                          color: "var(--color-accent)",
+                          background: "var(--color-accent-bg, rgba(99,102,241,0.1))",
+                          padding: "0.15rem 0.45rem",
+                          borderRadius: "4px",
                         }}
                       >
-                        {member.accepted_at ? "Accepted" : "Pending"}
-                      </div>
+                        {member.role}
+                      </span>
                     </div>
                     <div
                       style={{
@@ -1505,40 +1660,66 @@ export default function Campaign() {
                         alignItems: "center",
                       }}
                     >
-                      <select
-                        value={member.role}
-                        onChange={(e) =>
-                          handleRoleChange(member.user_id, e.target.value)
-                        }
-                        disabled={
-                          !member.user_id ||
-                          String(member.user_id) === String(user?.id)
-                        }
-                        style={{ padding: "0.25rem", fontSize: "0.85rem" }}
-                      >
-                        <option value="viewer">Viewer</option>
-                        <option value="manager">Manager</option>
-                        <option value="owner">Owner</option>
-                      </select>
-                      <button
-                        className="btn-secondary"
-                        onClick={() => handleRemoveMember(member.user_id)}
-                        disabled={String(member.user_id) === String(user?.id)}
-                        style={{
-                          padding: "0.25rem 0.5rem",
-                          fontSize: "0.85rem",
-                          color: "var(--color-status-error)",
-                          borderColor: "var(--color-status-error)",
-                        }}
-                      >
-                        Remove
-                      </button>
+                      {canChangeRoles && member.user_id ? (
+                        <select
+                          value={member.role}
+                          onChange={(e) =>
+                            handleRoleChange(member.user_id, e.target.value)
+                          }
+                          disabled={String(member.user_id) === String(user?.id)}
+                          style={{ padding: "0.25rem", fontSize: "0.85rem" }}
+                        >
+                          <option value="viewer">Viewer</option>
+                          <option value="editor">Editor</option>
+                          <option value="manager">Manager</option>
+                          <option value="owner">Owner</option>
+                        </select>
+                      ) : (
+                        <span style={{ fontSize: "0.85rem", color: "var(--color-text-hint)" }}>
+                          {member.role}
+                        </span>
+                      )}
+                      {(canChangeRoles || String(member.user_id) === String(user?.id)) &&
+                        member.user_id && (
+                        <button
+                          className="btn-secondary"
+                          onClick={() => handleRemoveMember(member.user_id)}
+                          disabled={
+                            canChangeRoles &&
+                            String(member.user_id) === String(user?.id) &&
+                            member.role === "owner"
+                          }
+                          style={{
+                            padding: "0.25rem 0.5rem",
+                            fontSize: "0.85rem",
+                            color: "var(--color-status-error)",
+                            borderColor: "var(--color-status-error)",
+                          }}
+                        >
+                          {String(member.user_id) === String(user?.id) ? "Leave" : "Remove"}
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
               </div>
             )}
           </div>
+          </>
+          )}
+        </div>
+      )}
+
+      {canViewAnalytics && !canManageTeam && activeTab !== "analytics" && (
+        <div style={{ marginBottom: "1rem" }} data-no-print>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => setActiveTab("analytics")}
+            style={{ fontSize: "0.85rem" }}
+          >
+            View Analytics
+          </button>
         </div>
       )}
 
@@ -1636,7 +1817,7 @@ export default function Campaign() {
 
 
       {/* Analytics Section */}
-      {analytics && (
+      {canViewAnalytics && analytics && (canManageTeam ? activeTab === "analytics" : true) && (
         <div style={{ marginBottom: "2rem" }}>
           <h2 style={styles.sectionTitle}>Analytics</h2>
           {!analytics.dailyTotals || analytics.dailyTotals.length === 0 ? (
