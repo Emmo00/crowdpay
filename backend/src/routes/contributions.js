@@ -909,7 +909,7 @@ router.post(
         text: `Congratulations! Your campaign "${campaign.title}" has reached its target of ${campaign.target_amount} ${campaign.asset_type}. You can now start the withdrawal process.`
       });
     }
-  });
-}));
+  }),
+);
 
 module.exports = router;
