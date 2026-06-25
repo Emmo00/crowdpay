@@ -260,9 +260,18 @@ async function uploadContractWasm(wasmBuffer, signerSecret) {
   throw new Error(`WASM upload failed: ${result.status}`);
 }
 
+async function refund(contractId, contributorPublicKey) {
+  return invokeContract({
+    contractId,
+    method: 'refund',
+    args: [nativeToScVal(Address.fromString(contributorPublicKey), { type: 'address' })],
+    signerSecret: process.env.PLATFORM_SECRET_KEY,
+  });
+}
+
 /**
  * Deploy and initialize both escrow and milestones contracts for a campaign.
- * Returns { escrowContractId, milestonesContractId }.
+ * Uses pre-deployed contract IDs from env when set, otherwise deploys new instances.
  * Falls back to mock IDs if SOROBAN_ENABLED is not true.
  */
 async function deployCampaignContracts({
@@ -276,6 +285,38 @@ async function deployCampaignContracts({
   milestones,
   signerSecret,
 }) {
+  const envEscrowId = process.env.ESCROW_CONTRACT_ID || null;
+  const envMilestonesId = process.env.MILESTONES_CONTRACT_ID || null;
+
+  if (envEscrowId || envMilestonesId) {
+    if (envEscrowId) {
+      await initializeEscrow({
+        contractId: envEscrowId,
+        adminAddress: creatorPublicKey,
+        campaignId,
+        target: targetAmount,
+        deadline: deadlineUnix,
+        assetContractAddress,
+        platformFeeBps,
+        platformFeeRecipientAddress: platformPublicKey,
+        signerSecret,
+      });
+    }
+
+    if (envMilestonesId && milestones && milestones.length) {
+      await initializeMilestones({
+        contractId: envMilestonesId,
+        creatorAddress: creatorPublicKey,
+        platformAddress: platformPublicKey,
+        escrowContractId: envEscrowId,
+        milestones,
+        signerSecret,
+      });
+    }
+
+    return { escrowContractId: envEscrowId, milestonesContractId: envMilestonesId };
+  }
+
   const sorobanEnabled = process.env.SOROBAN_ENABLED === 'true';
   const escrowWasmHash = process.env.ESCOW_WASM_HASH;
   const milestonesWasmHash = process.env.MILESTONES_WASM_HASH;
@@ -557,4 +598,5 @@ module.exports = {
   triggerRefund,
   getContractStatus,
   mapMilestoneOnChainStatus,
+  refund,
 };
