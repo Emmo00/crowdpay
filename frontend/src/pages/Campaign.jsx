@@ -1390,9 +1390,7 @@ export default function Campaign() {
                   Compact widget (iframe)
                 </label>
                 <div style={{ position: 'relative' }}>
-                  <pre style={styles.embedCode}>
-                    {`<iframe src="${window.location.origin}/embed/campaigns/${campaign.id}" \n        width="480" height="280" frameborder="0">\n</iframe>`}
-                  </pre>
+                  <pre style={styles.embedCode}>{widgetEmbedCode}</pre>
                   <button
                     type="button"
                     onClick={() => {
