@@ -69,6 +69,18 @@ async function markWithdrawalFailed(client, { withdrawalRequestId, reason }) {
   );
 }
 
+async function insertContributionAdjustment(client, { campaignId, amount, assetType, adjustedAt }) {
+  const runner = client || db;
+  const { rows } = await runner.query(
+    `INSERT INTO contributions
+       (campaign_id, sender_public_key, amount, asset, payment_type, tx_hash, created_at)
+     VALUES ($1, 'system', $2, $3, 'reconciliation_adjustment', NULL, $4)
+     RETURNING id`,
+    [campaignId, amount, assetType, adjustedAt || new Date()],
+  );
+  return rows[0].id;
+}
+
 async function insertReconciliationAdjustment(client, row) {
   const runner = client || db;
   const { rows } = await runner.query(
@@ -97,5 +109,6 @@ module.exports = {
   markContributionIndexed,
   finalizeWithdrawalSubmitted,
   markWithdrawalFailed,
+  insertContributionAdjustment,
   insertReconciliationAdjustment,
 };

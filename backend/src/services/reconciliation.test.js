@@ -21,6 +21,9 @@ function buildReconciliation(overrides = {}) {
       if (text.includes('UPDATE campaigns SET raised_amount')) {
         return { rows: [{ id: params[1] }] };
       }
+      if (text.includes('INSERT INTO contributions')) {
+        return { rows: [{ id: 'contribution-adj-1' }] };
+      }
       if (text.includes('INSERT INTO stellar_transactions')) {
         return { rows: [{ id: 'stellar-tx-1' }] };
       }
@@ -93,6 +96,14 @@ function buildReconciliation(overrides = {}) {
       getCampaignBalance: async () => overrides.onChainBalance || { USDC: '150' },
     },
     './stellarTransactionService': {
+      insertContributionAdjustment: async (client, row) => {
+        queryLog.push({ text: 'insertContributionAdjustment', row, via: 'service' });
+        const result = await client.query(
+          `INSERT INTO contributions (campaign_id, sender_public_key, amount, asset, payment_type, tx_hash, created_at) VALUES ($1, 'system', $2, $3, 'reconciliation_adjustment', NULL, $4)`,
+          [row.campaignId, row.amount, row.assetType, row.adjustedAt || new Date()]
+        );
+        return result.rows[0]?.id || 'contribution-adj-1';
+      },
       insertReconciliationAdjustment: async (client, row) => {
         queryLog.push({ text: 'insertReconciliationAdjustment', row, via: 'service' });
         const result = await client.query(
@@ -173,4 +184,91 @@ test('reconcileCampaignBalances returns batch summary', async () => {
   assert.strictEqual(summary.campaigns_checked, 1);
   assert.strictEqual(summary.updated, 1);
   assert.strictEqual(summary.results[0].diff, 50);
+});
+
+test('applyReconciliationCorrection inserts a reconciliation_adjustment contribution row', async () => {
+  const reconciliation = buildReconciliation();
+  await reconciliation.reconcileSingleCampaign('camp-1');
+
+  const contributionInsert = queryLog.find(
+    (q) => q.text === 'insertContributionAdjustment'
+  );
+  assert.ok(contributionInsert, 'insertContributionAdjustment should be called');
+  assert.strictEqual(contributionInsert.row.campaignId, 'camp-1');
+  assert.strictEqual(contributionInsert.row.amount, 50);   // liveBalance - dbBalance = 150 - 100
+  assert.strictEqual(contributionInsert.row.assetType, 'USDC');
+  assert.ok(contributionInsert.row.adjustedAt instanceof Date, 'adjustedAt should be a Date');
+});
+
+test('contribution adjustment INSERT uses reconciliation_adjustment payment_type', async () => {
+  const reconciliation = buildReconciliation();
+  await reconciliation.reconcileSingleCampaign('camp-1');
+
+  const rawInsert = queryLog.find(
+    (q) => q.via === 'client' && q.text.includes('INSERT INTO contributions')
+  );
+  assert.ok(rawInsert, 'contributions INSERT should be executed via client');
+  assert.ok(rawInsert.text.includes("'reconciliation_adjustment'"), 'payment_type must be reconciliation_adjustment');
+  assert.ok(rawInsert.text.includes('NULL'), 'tx_hash must be NULL for system-generated adjustments');
+});
+
+test('contribution adjustment and campaign UPDATE run in the same transaction', async () => {
+  const reconciliation = buildReconciliation();
+  await reconciliation.reconcileSingleCampaign('camp-1');
+
+  const txEvents = queryLog
+    .filter((q) => q.via === 'client')
+    .map((q) => {
+      if (q.text === 'BEGIN') return 'BEGIN';
+      if (q.text === 'COMMIT') return 'COMMIT';
+      if (q.text.includes('UPDATE campaigns')) return 'UPDATE_CAMPAIGN';
+      if (q.text.includes('INSERT INTO contributions')) return 'INSERT_CONTRIBUTION';
+      if (q.text.includes('INSERT INTO stellar_transactions')) return 'INSERT_STELLAR';
+      return null;
+    })
+    .filter(Boolean);
+
+  const beginIdx = txEvents.indexOf('BEGIN');
+  const commitIdx = txEvents.indexOf('COMMIT');
+  const campaignIdx = txEvents.indexOf('UPDATE_CAMPAIGN');
+  const contribIdx = txEvents.indexOf('INSERT_CONTRIBUTION');
+
+  assert.ok(beginIdx < campaignIdx, 'UPDATE_CAMPAIGN must come after BEGIN');
+  assert.ok(beginIdx < contribIdx, 'INSERT_CONTRIBUTION must come after BEGIN');
+  assert.ok(campaignIdx < commitIdx, 'UPDATE_CAMPAIGN must come before COMMIT');
+  assert.ok(contribIdx < commitIdx, 'INSERT_CONTRIBUTION must come before COMMIT');
+});
+
+test('negative diff (on-chain < db) is recorded as a negative adjustment amount', async () => {
+  // Simulate on-chain balance lower than DB (e.g. a ledger revert)
+  const reconciliation = buildReconciliation({ onChainBalance: { USDC: '80' } });
+  await reconciliation.reconcileSingleCampaign('camp-1');
+
+  const contributionInsert = queryLog.find(
+    (q) => q.text === 'insertContributionAdjustment'
+  );
+  assert.ok(contributionInsert, 'insertContributionAdjustment should be called');
+  // diff = 80 - 100 = -20
+  assert.strictEqual(contributionInsert.row.amount, -20);
+});
+
+test('no contribution adjustment is inserted when there is no discrepancy', async () => {
+  // on-chain balance matches the DB exactly
+  const reconciliation = buildReconciliation({ onChainBalance: { USDC: '100' } });
+  await reconciliation.reconcileSingleCampaign('camp-1');
+
+  const contributionInsert = queryLog.find(
+    (q) => q.text === 'insertContributionAdjustment'
+  );
+  assert.strictEqual(contributionInsert, undefined, 'no adjustment should be inserted when balances match');
+});
+
+test('no contribution adjustment is inserted when campaign has a pending withdrawal', async () => {
+  const reconciliation = buildReconciliation({ pendingWithdrawal: true });
+  await reconciliation.reconcileSingleCampaign('camp-1');
+
+  const contributionInsert = queryLog.find(
+    (q) => q.text === 'insertContributionAdjustment'
+  );
+  assert.strictEqual(contributionInsert, undefined, 'no adjustment should be inserted for skipped campaigns');
 });

@@ -4,6 +4,7 @@ const logger = require("../config/logger");
 const cache = require("../utils/cache");
 const { getCampaignBalance } = require("./stellarService");
 const {
+  insertContributionAdjustment,
   insertReconciliationAdjustment,
 } = require("./stellarTransactionService");
 
@@ -60,6 +61,13 @@ async function applyReconciliationCorrection(campaign, dbBalance, liveBalance) {
        WHERE id = $2`,
       [liveBalance, campaign.id],
     );
+    const adjustedAt = new Date();
+    await insertContributionAdjustment(client, {
+      campaignId: campaign.id,
+      amount: diff,
+      assetType: campaign.asset_type,
+      adjustedAt,
+    });
     const stellarTxId = await insertReconciliationAdjustment(client, {
       campaignId: campaign.id,
       dbBalance,
