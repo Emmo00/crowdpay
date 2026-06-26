@@ -14,13 +14,7 @@ const { watchCampaignWallet, addSSEClient, removeSSEClient } = require('../servi
 const { emitWebhookEventForUser, WEBHOOK_EVENTS } = require('../services/webhookDispatcher');
 const { refreshCampaignStatus, refreshActiveCampaignStatuses } = require('../services/campaignStatusService');
 const { queueFailedCampaignRefunds } = require('../services/campaignStatusActions');
-const {
-  deployCampaignContracts,
-  getContractStatus,
-  invokeContract,
-  encodeMilestone,
-  nativeToScVal,
-} = require('../services/sorobanService');
+const { invokeContract, encodeMilestone, nativeToScVal, deployCampaignContracts } = require('../services/sorobanService');
 const { sendEmail, sendTeamMemberInvitedEmail } = require('../services/emailService');
 const { uploadCampaignCoverImage } = require('../services/storage');
 const { isKycRequiredForCampaigns } = require('../services/kycProvider');
@@ -426,6 +420,17 @@ router.get('/featured', asyncHandler(async (req, res) => {
     WHERE c.featured = TRUE AND c.status = 'active' AND c.deleted_at IS NULL
     ORDER BY c.featured_at DESC
     LIMIT 3
+  `);
+  res.json(rows);
+}));
+
+router.get('/categories', asyncHandler(async (req, res) => {
+  const { rows } = await db.query(`
+    SELECT category, COUNT(*)::int AS count
+    FROM campaigns
+    WHERE status = 'active' AND deleted_at IS NULL
+    GROUP BY category
+    ORDER BY category ASC
   `);
   res.json(rows);
 }));
@@ -1173,16 +1178,13 @@ router.patch('/:id', requireAuth, asyncHandler(async (req, res) => {
     // Validate ISO8601 format
     const deadlineDate = new Date(deadline);
     if (isNaN(deadlineDate.getTime())) {
-      return res.status(422).json({ error: 'Deadline must be a valid date' });
+      return res.status(422).json({ error: 'Deadline must be a valid ISO 8601 date' });
     }
 
-    // Check deadline is not in the past
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    deadlineDate.setHours(0, 0, 0, 0);
-
-    if (deadlineDate < today) {
-      return res.status(422).json({ error: 'Deadline cannot be in the past' });
+    // Check deadline is not in the past (UTC comparison)
+    const now = new Date();
+    if (deadlineDate.getTime() <= now.getTime()) {
+      return res.status(422).json({ error: 'Deadline must be in the future (UTC)' });
     }
 
     updates.deadline = deadline;
