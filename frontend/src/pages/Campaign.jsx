@@ -1451,9 +1451,7 @@ export default function Campaign() {
                   Compact widget (iframe)
                 </label>
                 <div style={{ position: 'relative' }}>
-                  <pre style={styles.embedCode}>
-                    {`<iframe src="${window.location.origin}/embed/campaigns/${campaign.id}" \n        width="480" height="280" frameborder="0">\n</iframe>`}
-                  </pre>
+                  <pre style={styles.embedCode}>{widgetEmbedCode}</pre>
                   <button
                     type="button"
                     onClick={() => {
@@ -2655,5 +2653,46 @@ const styles = {
     borderRadius: '50%',
     background: '#16a34a',
     animation: 'pulse 1.5s ease-in-out infinite',
+  },
+  embedCode: {
+    background: 'var(--color-surface)',
+    border: '1px solid var(--color-border-light)',
+    borderRadius: '6px',
+    padding: '0.75rem',
+    fontSize: '0.75rem',
+    fontFamily: 'monospace',
+    color: 'var(--color-text-primary)',
+    overflow: 'auto',
+    whiteSpace: 'pre-wrap',
+    wordBreak: 'break-all',
+    paddingRight: '5rem',
+  },
+  embedPreview: {
+    background: 'var(--color-surface)',
+    border: '1px solid var(--color-border-light)',
+    borderRadius: '6px',
+    padding: '0.75rem',
+  },
+  emptyBackers: {
+    padding: '2.5rem 1rem',
+    textAlign: 'center',
+    background: 'var(--color-accent-lightest)',
+    border: '2px dashed var(--color-accent-lighter)',
+    borderRadius: '12px',
+    color: 'var(--color-accent)',
+    fontWeight: 700,
+  },
+  avatar: {
+    width: '36px',
+    height: '36px',
+    borderRadius: '50%',
+    background: 'var(--color-accent-lightest)',
+    color: 'var(--color-accent)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    fontSize: '0.9rem',
+    fontWeight: 800,
+    flexShrink: 0,
   },
 };
