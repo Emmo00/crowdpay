@@ -170,9 +170,9 @@ export default function Dashboard() {
 
   const isCreator = user?.role === 'creator' || user?.role === 'admin';
 
-  const tabs = isCreator
+  const visibleTabs = isCreator
     ? [...TABS, { id: 'referrals', labelKey: 'dashboard.tabs.referrals' }]
-    : TABS;
+    : TABS.filter((t) => t.id !== 'analytics');
 
   const kycRequired =
     user?.kyc_required_for_campaigns ??
@@ -309,7 +309,6 @@ export default function Dashboard() {
   if (!user) return <Navigate to="/login" replace />;
 
   const loading = activeTab === 'campaigns' ? loadingCampaigns : loadingContributions;
-  const visibleTabs = isCreator ? TABS : TABS.filter((t) => t.id !== 'analytics');
 
   return (
     <main className="container" style={{ paddingTop: '2rem', paddingBottom: '3rem' }}>
@@ -370,7 +369,7 @@ export default function Dashboard() {
           paddingBottom: '0.5rem',
         }}
       >
-        {tabs.map((tab) => (
+        {visibleTabs.map((tab) => (
           <button
             key={tab.id}
             type="button"
