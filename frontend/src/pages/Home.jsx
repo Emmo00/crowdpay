@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { api } from '../services/api';
@@ -35,6 +35,7 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
+  const paginationRequestRef = useRef(false);
   const [listError, setListError] = useState('');
   const { user } = useAuth();
   const [showContributorTips, setShowContributorTips] = useState(isContributorOnboardingVisible);
@@ -113,9 +114,13 @@ export default function Home() {
   }, [search, status, asset, category, sort]);
 
   async function loadMore() {
-    if (loadingMore || !hasMore) return;
+    if (loadingMore || !hasMore || paginationRequestRef.current) return;
+
+    paginationRequestRef.current = true;
+    const scrollPosition = window.scrollY;
     setLoadingMore(true);
     setListError('');
+
     try {
       const { campaigns: next, total: nextTotal } = await api.getCampaigns({
         search,
@@ -126,6 +131,7 @@ export default function Home() {
         limit: 20,
         offset: page * 20,
       });
+
       setCampaigns((prev) => {
         const updated = [...prev, ...next];
         setHasMore(updated.length < nextTotal);
@@ -133,9 +139,14 @@ export default function Home() {
       });
       setTotal(nextTotal);
       setPage((p) => p + 1);
+
+      requestAnimationFrame(() => {
+        window.scrollTo({ top: scrollPosition });
+      });
     } catch (err) {
       setListError(err.message || t('home.loadingCampaigns'));
     } finally {
+      paginationRequestRef.current = false;
       setLoadingMore(false);
     }
   }
@@ -395,6 +406,13 @@ export default function Home() {
               <CampaignCard key={c.id} campaign={c} />
             ))}
           </div>
+          {loadingMore && (
+            <div aria-busy="true" aria-live="polite" style={{ ...styles.grid, marginTop: '1.25rem' }}>
+              {Array.from({ length: 4 }, (_, i) => (
+                <CampaignCardSkeleton key={`pagination-skeleton-${i}`} />
+              ))}
+            </div>
+          )}
           <div style={styles.pagination}>
             <span style={styles.paginationInfo}>
               {t('home.showingCampaigns', { count: campaigns.length, total })}
