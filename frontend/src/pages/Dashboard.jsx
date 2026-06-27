@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import PropTypes from 'prop-types';
 import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../context/AuthContext';
@@ -9,7 +10,7 @@ import CampaignStatusBadge from '../components/CampaignStatusBadge';
 import ContributorDashboard from '../components/ContributorDashboard';
 import DepositModal from '../components/DepositModal';
 import ApiKeysPanel from '../components/ApiKeysPanel';
-import { stellarExpertTxUrl, stellarExpertAccountUrl } from '../config/stellar';
+import { stellarExpertAccountUrl } from '../config/stellar';
 import {
   LineChart,
   Line,
@@ -30,16 +31,6 @@ const TABS = [
 function progressPct(campaign) {
   if (!Number(campaign.target_amount)) return 0;
   return Math.min(100, (Number(campaign.raised_amount) / Number(campaign.target_amount)) * 100);
-}
-
-function formatConversionRate(row) {
-  if (row.conversion_rate === null) return null;
-  const rate = Number(row.conversion_rate);
-  if (!Number.isFinite(rate)) return null;
-  if (row.source_asset && row.source_amount !== null) {
-    return `1 ${row.source_asset} ≈ ${rate.toLocaleString(undefined, { maximumFractionDigits: 6 })} ${row.asset}`;
-  }
-  return rate.toLocaleString(undefined, { maximumFractionDigits: 6 });
 }
 
 function exportCSV(rows, filename) {
@@ -140,8 +131,18 @@ function MilestoneFunnel({ campaignId }) {
   );
 }
 
+MiniLineChart.propTypes = {
+  data: PropTypes.arrayOf(PropTypes.object),
+  dataKey: PropTypes.string,
+  label: PropTypes.string,
+};
+
+MilestoneFunnel.propTypes = {
+  campaignId: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
+};
+
 export default function Dashboard() {
-  const { user, token, ready, updateUser } = useAuth();
+  const { user, ready, updateUser } = useAuth();
   const { t } = useTranslation();
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get('tab');
@@ -209,7 +210,7 @@ export default function Dashboard() {
       setLoadingCampaigns(false);
       setLoadingContributions(false);
     }
-  }, [user?.role, updateUser]);
+  }, [isCreator, user, updateUser]);
 
   const loadCampaignAnalytics = useCallback((id) => {
     setSelectedCampaignId(id);
@@ -896,7 +897,7 @@ export default function Dashboard() {
                             </tr>
                           </thead>
                           <tbody>
-                            {refs.map((r, i) => (
+                            {refs.map((r) => (
                               <tr
                                 key={r.referral_code}
                                 style={{ borderBottom: '1px solid var(--color-border-lighter)' }}
