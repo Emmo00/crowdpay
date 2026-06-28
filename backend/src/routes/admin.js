@@ -1,7 +1,12 @@
 const router = require('express').Router();
+const jwt = require('jsonwebtoken');
 const db = require('../config/database');
 const logger = require('../config/logger');
-const { requireAuth, requireAdmin } = require('../middleware/auth');
+const {
+  requireAuth,
+  requireAdmin,
+  IMPERSONATION_TOKEN_COOKIE_NAME,
+} = require('../middleware/auth');
 const { reconcileSingleCampaign, getRecentReconciliationRuns } = require('../services/reconciliation');
 const { server } = require('../config/stellar');
 const {
@@ -10,8 +15,7 @@ const {
 } = require('../services/webhookDispatcher');
 const cache = require('../utils/cache');
 
-router.use(requireAuth);
-router.use(requireAdmin);
+const IMPERSONATION_TTL_SECONDS = 15 * 60;
 
 /**
  * Log admin action to audit table
@@ -27,6 +31,102 @@ async function logAdminAction(adminUserId, actionType, targetType, targetId, det
     logger.error('Failed to log admin action', { error: err.message, actionType, targetType });
   }
 }
+
+function setImpersonationCookie(res, token) {
+  res.cookie(IMPERSONATION_TOKEN_COOKIE_NAME, token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict',
+    maxAge: IMPERSONATION_TTL_SECONDS * 1000,
+  });
+}
+
+function clearImpersonationCookie(res) {
+  res.clearCookie(IMPERSONATION_TOKEN_COOKIE_NAME, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'strict',
+  });
+}
+
+/**
+ * POST /api/admin/impersonate/exit
+ * Clear impersonation mode and return to the admin session.
+ */
+router.post('/impersonate/exit', requireAuth, async (req, res) => {
+  try {
+    const adminUserId = req.impersonation?.adminUserId || req.user?.impersonated_by;
+    const targetUserId = req.impersonation?.targetUserId || req.user?.userId;
+
+    clearImpersonationCookie(res);
+
+    if (adminUserId && targetUserId) {
+      await logAdminAction(adminUserId, 'impersonate_end', 'user', targetUserId, {});
+    }
+
+    res.json({ message: 'Impersonation ended' });
+  } catch (err) {
+    logger.error('Error ending impersonation', { error: err.message });
+    res.status(500).json({ error: 'Failed to end impersonation' });
+  }
+});
+
+router.use(requireAuth);
+router.use(requireAdmin);
+
+/**
+ * POST /api/admin/impersonate/:userId
+ * Issue a short-lived token for debugging as another user.
+ */
+router.post('/impersonate/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { rows } = await db.query(
+      `SELECT id, email, name, role, is_admin, is_banned
+       FROM users
+       WHERE id = $1`,
+      [userId]
+    );
+
+    if (!rows.length) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const target = rows[0];
+    const expiresAt = new Date(Date.now() + IMPERSONATION_TTL_SECONDS * 1000);
+    const token = jwt.sign(
+      {
+        userId: target.id,
+        role: target.role || 'contributor',
+        impersonated_by: req.user.userId,
+        impersonation: true,
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: IMPERSONATION_TTL_SECONDS }
+    );
+
+    setImpersonationCookie(res, token);
+
+    await logAdminAction(req.user.userId, 'impersonate_start', 'user', target.id, {
+      target_email: target.email,
+      target_role: target.role,
+      target_is_admin: Boolean(target.is_admin),
+      expires_at: expiresAt.toISOString(),
+      expires_in_seconds: IMPERSONATION_TTL_SECONDS,
+    });
+
+    res.status(201).json({
+      token,
+      expires_in: IMPERSONATION_TTL_SECONDS,
+      expires_at: expiresAt.toISOString(),
+      user: target,
+      impersonated_by: req.user.userId,
+    });
+  } catch (err) {
+    logger.error('Error starting impersonation', { error: err.message, targetUserId: req.params.userId });
+    res.status(500).json({ error: 'Failed to start impersonation' });
+  }
+});
 
 /**
  * GET /api/admin/stats

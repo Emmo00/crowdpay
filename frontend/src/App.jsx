@@ -22,6 +22,7 @@ import { ThemeProvider } from './context/ThemeContext';
 import { ToastProvider } from './context/ToastContext';
 import { NetworkStatusProvider } from './context/NetworkStatusContext';
 import { OfflineBanner } from './components/OfflineBanner';
+import ImpersonationBanner from './components/ImpersonationBanner';
 import { useAuth } from './context/AuthContext';
 
 export default function App() {
@@ -40,6 +41,7 @@ export default function App() {
         <ToastProvider>
           <NetworkStatusProvider>
             <OfflineBanner />
+            {!hideNavbar && <ImpersonationBanner />}
             {!hideNavbar && <Navbar />}
             <Routes>
               <Route path="/" element={<Home />} />
