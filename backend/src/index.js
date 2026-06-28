@@ -127,6 +127,33 @@ const openApiSpec = swaggerJsdoc({
           bearerFormat: "JWT",
         },
       },
+      schemas: {
+        Error: {
+          type: "object",
+          properties: {
+            error: {
+              type: "object",
+              properties: {
+                code: { type: "string", example: "VALIDATION_ERROR" },
+                message: { type: "string", example: "Invalid email format" },
+                fields: {
+                  type: "array",
+                  nullable: true,
+                  items: {
+                    type: "object",
+                    properties: {
+                      field: { type: "string" },
+                      message: { type: "string" },
+                    },
+                  },
+                },
+              },
+              required: ["code", "message"],
+            },
+          },
+          required: ["error"],
+        },
+      },
     },
   },
   apis: ["./src/routes/*.js"],
@@ -148,6 +175,33 @@ const v1OpenApiSpec = swaggerJsdoc({
           type: "http",
           scheme: "bearer",
           bearerFormat: "cp_live_…",
+        },
+      },
+      schemas: {
+        Error: {
+          type: "object",
+          properties: {
+            error: {
+              type: "object",
+              properties: {
+                code: { type: "string", example: "VALIDATION_ERROR" },
+                message: { type: "string", example: "Invalid email format" },
+                fields: {
+                  type: "array",
+                  nullable: true,
+                  items: {
+                    type: "object",
+                    properties: {
+                      field: { type: "string" },
+                      message: { type: "string" },
+                    },
+                  },
+                },
+              },
+              required: ["code", "message"],
+            },
+          },
+          required: ["error"],
         },
       },
     },

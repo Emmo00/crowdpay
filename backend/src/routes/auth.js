@@ -101,14 +101,29 @@ const loginLimiter = rateLimit({
   skip: () => isTest,
 });
 
+// Per-IP: 3 TOTP attempts per 30 seconds.
 const totpChallengeLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: isTest ? 100000 : 10,
+  windowMs: 30 * 1000,
+  max: isTest ? 100000 : 3,
   message: { error: 'Too many 2FA attempts, please try again later.' },
   standardHeaders: true,
   legacyHeaders: false,
   skip: () => isTest,
 });
+
+// Per-account (by email): 3 TOTP attempts per 30 seconds, independent of IP.
+const totpChallengeEmailLimiter = rateLimit({
+  windowMs: 30 * 1000,
+  max: isTest ? 100000 : 3,
+  message: { error: 'Too many 2FA attempts, please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => isTest,
+  keyGenerator: (req) => String((req.body?.email || '').trim().toLowerCase()),
+});
+
+const TOTP_MAX_CONSECUTIVE_FAILURES = 10;
+const TOTP_LOCKOUT_MS = 15 * 60 * 1000;
 
 function hashToken(token) {
   return crypto.createHash('sha256').update(token, 'utf8').digest('hex');
@@ -438,7 +453,7 @@ router.post('/login', loginLimiter, loginValidation, validateRequest, async (req
   });
 });
 
-router.post('/2fa/challenge', totpChallengeLimiter, validateRequest, async (req, res) => {
+router.post('/2fa/challenge', totpChallengeLimiter, totpChallengeEmailLimiter, validateRequest, async (req, res) => {
   const { email, password, code } = req.body;
   if (!email || !password || !code) {
     return res.status(400).json({ error: 'Email, password, and code are required' });
@@ -453,6 +468,15 @@ router.post('/2fa/challenge', totpChallengeLimiter, validateRequest, async (req,
   const user = rows[0];
   if (!user.totp_enabled) {
     return res.status(400).json({ error: '2FA is not enabled for this account' });
+  }
+
+  if (user.totp_locked_until && new Date(user.totp_locked_until) > new Date()) {
+    logger.warn('TOTP challenge blocked: account locked', {
+      event: 'totp_locked',
+      userId: user.id,
+      ip: req.ip,
+    });
+    return res.status(423).json({ error: 'Too many failed 2FA attempts. Try again later.' });
   }
 
   let codeValid = false;
@@ -472,7 +496,31 @@ router.post('/2fa/challenge', totpChallengeLimiter, validateRequest, async (req,
   }
 
   if (!codeValid) {
+    const failedAttempts = (user.totp_failed_attempts || 0) + 1;
+    const lockingOut = failedAttempts >= TOTP_MAX_CONSECUTIVE_FAILURES;
+    await db.query(
+      'UPDATE users SET totp_failed_attempts = $1, totp_locked_until = $2 WHERE id = $3',
+      [
+        lockingOut ? 0 : failedAttempts,
+        lockingOut ? new Date(Date.now() + TOTP_LOCKOUT_MS) : null,
+        user.id,
+      ]
+    );
+    logger.warn('Failed 2FA attempt', {
+      event: 'totp_failed_attempt',
+      userId: user.id,
+      ip: req.ip,
+      consecutiveFailures: failedAttempts,
+      lockedOut: lockingOut,
+    });
     return res.status(401).json({ error: 'Invalid 2FA code' });
+  }
+
+  if (user.totp_failed_attempts) {
+    await db.query(
+      'UPDATE users SET totp_failed_attempts = 0, totp_locked_until = NULL WHERE id = $1',
+      [user.id]
+    );
   }
 
   const { accessToken } = generateTokens(user);

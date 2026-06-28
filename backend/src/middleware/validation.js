@@ -321,7 +321,18 @@ function validateRequest(req, res, next) {
   const result = validationResult(req);
   if (result.isEmpty()) return next();
 
-  return res.status(400).json({ errors: result.array() });
+  const fields = result.array().map((e) => ({
+    field: e.path || e.param,
+    message: e.msg,
+  }));
+
+  return res.status(400).json({
+    error: {
+      code: 'VALIDATION_ERROR',
+      message: fields[0]?.message || 'Validation failed',
+      fields,
+    },
+  });
 }
 
 function validateRequestAsError(req, res, next) {
