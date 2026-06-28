@@ -14,7 +14,17 @@ router.get('/me', requireAuth, asyncHandler(async (req, res) => {
     [req.user.userId]
   );
   if (!rows.length) return res.status(404).json({ error: 'User not found' });
-  res.json({ ...rows[0], kyc_required_for_campaigns: isKycRequiredForCampaigns() });
+  res.json({
+    ...rows[0],
+    kyc_required_for_campaigns: isKycRequiredForCampaigns(),
+    impersonation: req.impersonation
+      ? {
+          active: true,
+          admin_user_id: req.impersonation.adminUserId,
+        }
+      : null,
+    impersonated_by: req.impersonation?.adminUserId || null,
+  });
 }));
 
 router.post('/me/kyc/start', requireAuth, asyncHandler(async (req, res) => {

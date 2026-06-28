@@ -442,6 +442,8 @@ export const api = {
   getAdminKycCampaigns: () => request('GET', '/admin/kyc/campaigns'),
   getAdminCampaignContributions: (campaignId, options = {}) =>
     request('GET', `/admin/campaigns/${campaignId}/contributions`, null, { query: options }),
+  adminImpersonateUser: (id) => request('POST', `/admin/impersonate/${id}`, {}),
+  adminExitImpersonation: () => request('POST', '/admin/impersonate/exit', {}),
   getAdminWebhookDeliveries: (options = {}) =>
     request('GET', '/admin/webhook-deliveries', null, { query: options }),
   adminRetryWebhookDelivery: (id, body) =>
