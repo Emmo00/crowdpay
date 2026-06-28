@@ -621,6 +621,8 @@ function DisputeManagement() {
 }
 
 function KycOversight() {
+  const { updateUser } = useAuth();
+  const navigate = useNavigate();
   const [kycFilter, setKycFilter] = useState('pending');
   const [users, setUsers] = useState([]);
   const [campaigns, setCampaigns] = useState([]);
@@ -650,6 +652,20 @@ function KycOversight() {
       load();
     } catch (err) {
       alert(err.message || 'KYC update failed');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function impersonateUser(user) {
+    setBusyId(user.id);
+    try {
+      await api.adminImpersonateUser(user.id);
+      const userData = await api.getMe();
+      updateUser(userData);
+      navigate('/dashboard');
+    } catch (err) {
+      alert(err.message || 'Could not start impersonation');
     } finally {
       setBusyId(null);
     }
@@ -709,6 +725,14 @@ function KycOversight() {
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    disabled={busyId === u.id}
+                    onClick={() => impersonateUser(u)}
+                    style={{ fontSize: '0.75rem' }}
+                  >
+                    View as user
+                  </button>
                   {u.kyc_status !== 'verified' && (
                     <button
                       type="button"
@@ -1001,7 +1025,7 @@ function CampaignsQueue() {
       .getAdminCampaigns()
       .then(setCampaigns)
       .finally(() => setLoading(false));
-  }
+  }, []);
 
   async function feature(id) {
     const note = window.prompt('Featured note (optional):', '');

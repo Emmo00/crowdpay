@@ -158,7 +158,6 @@ export default function Campaign() {
   const [embedCopied, setEmbedCopied] = useState(false);
   const [badgeCopied, setBadgeCopied] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
-  const [showEmbedSection, setShowEmbedSection] = useState(false);
   const [isEditingCampaign, setIsEditingCampaign] = useState(false);
   const [editFormData, setEditFormData] = useState({
     title: '',
