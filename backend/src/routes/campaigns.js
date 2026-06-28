@@ -134,8 +134,8 @@ function normalizeMilestonesInput(input) {
   }
 
   const normalized = input.map((milestone, index) => {
-    const title = String(milestone?.title || '').trim();
-    const description = String(milestone?.description || '').trim();
+    const title = stripHtml(milestone?.title || '');
+    const description = stripHtml(milestone?.description || '');
     if (!title) {
       throw new Error(`Milestone ${index + 1} title is required`);
     }
