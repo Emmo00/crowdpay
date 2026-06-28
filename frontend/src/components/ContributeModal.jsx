@@ -44,11 +44,27 @@ function friendlyFreighterError(err, fallback) {
   return fallback;
 }
 
+function matchTier(tiers, amount) {
+  if (!tiers || !Array.isArray(tiers) || !amount) return null;
+  const numAmount = parseFloat(amount);
+  if (isNaN(numAmount)) return null;
+
+  const eligible = tiers.filter(
+    (t) => numAmount >= parseFloat(t.min_amount) && !t.sold_out
+  );
+
+  if (eligible.length === 0) return null;
+
+  eligible.sort((a, b) => parseFloat(b.min_amount) - parseFloat(a.min_amount));
+  return eligible[0];
+}
+
 export default function ContributeModal({
   campaign,
   onClose,
   onSuccess,
   guestFreighterMode = false,
+  tiers = [],
 }) {
   const { user, token, updateUser } = useAuth();
   const [amount, setAmount] = useState('');
